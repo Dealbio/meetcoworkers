@@ -23,7 +23,24 @@ export type Database = {
       profile_industries: { Row: ProfileIndustry; Insert: Omit<ProfileIndustry, "created_at"> & { created_at?: string }; Update: Partial<ProfileIndustry>; Relationships: [] };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      save_my_profile: {
+        Args: {
+          p_first_name: string;
+          p_last_name: string;
+          p_avatar_url: string;
+          p_headline: string;
+          p_company_name: string | null;
+          p_working_on: string;
+          p_role_category: string;
+          p_city_id: string;
+          p_open_to_meet: boolean;
+          p_linkedin_url: string | null;
+          p_industry_ids: string[];
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

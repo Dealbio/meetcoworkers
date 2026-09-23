@@ -1,0 +1,12 @@
+{
+  "name": "Meet Coworkers",
+  "short_name": "Coworkers",
+  "description": "Discover the people working from your favorite places.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f5ef",
+  "theme_color": "#315c45",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

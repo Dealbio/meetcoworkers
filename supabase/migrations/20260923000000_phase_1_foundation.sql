@@ -94,16 +94,23 @@ create policy "Authenticated users can read active cities" on public.cities
 for select to authenticated using (is_active);
 create policy "Authenticated users can read industries" on public.industries
 for select to authenticated using (true);
-create policy "Authenticated users can read profiles" on public.profiles
-for select to authenticated using (true);
+create policy "Users can read their own profile" on public.profiles
+for select to authenticated using (user_id = (select auth.uid()));
 create policy "Users can create their own profile" on public.profiles
 for insert to authenticated with check (user_id = (select auth.uid()));
 create policy "Users can update their own profile" on public.profiles
 for update to authenticated
 using (user_id = (select auth.uid()))
 with check (user_id = (select auth.uid()));
-create policy "Authenticated users can read profile industries" on public.profile_industries
-for select to authenticated using (true);
+create policy "Users can read their own profile industries" on public.profile_industries
+for select to authenticated using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = profile_id
+      and p.user_id = (select auth.uid())
+  )
+);
 create policy "Users can add their own profile industries" on public.profile_industries
 for insert to authenticated with check (
   exists (select 1 from public.profiles p where p.id = profile_id and p.user_id = (select auth.uid()))
@@ -112,6 +119,125 @@ create policy "Users can remove their own profile industries" on public.profile_
 for delete to authenticated using (
   exists (select 1 from public.profiles p where p.id = profile_id and p.user_id = (select auth.uid()))
 );
+
+create function public.save_my_profile(
+  p_first_name text,
+  p_last_name text,
+  p_avatar_url text,
+  p_headline text,
+  p_company_name text,
+  p_working_on text,
+  p_role_category text,
+  p_city_id uuid,
+  p_open_to_meet boolean,
+  p_linkedin_url text,
+  p_industry_ids uuid[]
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_profile_id uuid;
+  v_industry_count integer;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1
+    from public.cities
+    where id = p_city_id
+      and is_active
+  ) then
+    raise exception 'Choose an active city' using errcode = '23514';
+  end if;
+
+  if coalesce(cardinality(p_industry_ids), 0) not between 1 and 3 then
+    raise exception 'Choose between 1 and 3 industries' using errcode = '23514';
+  end if;
+
+  if cardinality(p_industry_ids) <> (
+    select count(distinct industry_id)
+    from unnest(p_industry_ids) as industry_id
+  ) then
+    raise exception 'Industries must be unique' using errcode = '23514';
+  end if;
+
+  select count(*)
+  into v_industry_count
+  from public.industries
+  where id = any(p_industry_ids);
+
+  if v_industry_count <> cardinality(p_industry_ids) then
+    raise exception 'One or more industries are invalid' using errcode = '23514';
+  end if;
+
+  insert into public.profiles (
+    user_id,
+    first_name,
+    last_name,
+    avatar_url,
+    headline,
+    company_name,
+    working_on,
+    role_category,
+    city_id,
+    open_to_meet,
+    linkedin_url,
+    onboarding_completed
+  )
+  values (
+    v_user_id,
+    p_first_name,
+    p_last_name,
+    p_avatar_url,
+    p_headline,
+    nullif(p_company_name, ''),
+    p_working_on,
+    p_role_category,
+    p_city_id,
+    p_open_to_meet,
+    nullif(p_linkedin_url, ''),
+    true
+  )
+  on conflict (user_id) do update set
+    first_name = excluded.first_name,
+    last_name = excluded.last_name,
+    avatar_url = excluded.avatar_url,
+    headline = excluded.headline,
+    company_name = excluded.company_name,
+    working_on = excluded.working_on,
+    role_category = excluded.role_category,
+    city_id = excluded.city_id,
+    open_to_meet = excluded.open_to_meet,
+    linkedin_url = excluded.linkedin_url,
+    onboarding_completed = true
+  returning id into v_profile_id;
+
+  delete from public.profile_industries
+  where profile_id = v_profile_id;
+
+  insert into public.profile_industries (profile_id, industry_id)
+  select v_profile_id, industry_id
+  from unnest(p_industry_ids) as industry_id;
+
+  return v_profile_id;
+end;
+$$;
+
+revoke execute on function public.save_my_profile(
+  text, text, text, text, text, text, text, uuid, boolean, text, uuid[]
+) from public;
+revoke execute on function public.save_my_profile(
+  text, text, text, text, text, text, text, uuid, boolean, text, uuid[]
+) from anon;
+grant execute on function public.save_my_profile(
+  text, text, text, text, text, text, text, uuid, boolean, text, uuid[]
+) to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('avatars', 'avatars', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])

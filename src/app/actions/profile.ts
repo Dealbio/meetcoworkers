@@ -6,35 +6,47 @@ import { profileSchema, type ProfileInput } from "@/lib/profile-schema";
 
 export async function saveProfile(input: ProfileInput) {
   const parsed = profileSchema.safeParse(input);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Review your profile details." };
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Review your profile details." };
+  }
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Your session has expired. Please sign in again." };
+  if (!user) {
+    return { error: "Your session has expired. Please sign in again." };
+  }
 
-  const { industry_ids, company_name, linkedin_url, ...fields } = parsed.data;
-  const { data: profile, error } = await supabase.from("profiles").upsert({
-    ...fields,
-    user_id: user.id,
-    company_name: company_name || null,
-    linkedin_url: linkedin_url || null,
-    onboarding_completed: true,
-  }, { onConflict: "user_id" }).select("id").single();
+  const {
+    first_name,
+    last_name,
+    avatar_url,
+    headline,
+    company_name,
+    working_on,
+    role_category,
+    city_id,
+    open_to_meet,
+    linkedin_url,
+    industry_ids,
+  } = parsed.data;
 
-  if (error || !profile) {
-    console.error("Profile save failed", error?.message);
+  const { error } = await supabase.rpc("save_my_profile", {
+    p_first_name: first_name,
+    p_last_name: last_name,
+    p_avatar_url: avatar_url,
+    p_headline: headline,
+    p_company_name: company_name || null,
+    p_working_on: working_on,
+    p_role_category: role_category,
+    p_city_id: city_id,
+    p_open_to_meet: open_to_meet,
+    p_linkedin_url: linkedin_url || null,
+    p_industry_ids: industry_ids,
+  });
+
+  if (error) {
+    console.error("Profile save failed", error.message);
     return { error: "We couldn't save your profile. Please try again." };
-  }
-
-  const { error: deleteError } = await supabase.from("profile_industries").delete().eq("profile_id", profile.id);
-  if (deleteError) {
-    console.error("Industry reset failed", deleteError.message);
-    return { error: "Your profile was saved, but industries could not be updated." };
-  }
-  const { error: insertError } = await supabase.from("profile_industries").insert(industry_ids.map((industry_id) => ({ profile_id: profile.id, industry_id })));
-  if (insertError) {
-    console.error("Industry save failed", insertError.message);
-    return { error: "Your profile was saved, but industries could not be updated." };
   }
 
   revalidatePath("/profile");

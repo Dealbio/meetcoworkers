@@ -1,10 +1,11 @@
-name: Phase 1 CI
+name: App CI
 
 on:
   pull_request:
   push:
     branches:
-      - codex/execute-phase-1-prompt
+      - main
+      - "codex/**"
 
 jobs:
   validate:
